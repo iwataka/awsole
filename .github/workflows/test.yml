@@ -1,0 +1,19 @@
+name: test
+
+on: push
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v2
+      -
+        name: golangci-lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: latest
+      -
+        name: test
+        run: go test ./...
