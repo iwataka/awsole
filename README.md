@@ -1,3 +1,3 @@
 # awsole
 
-Login AWS console from CLI (only with federated user...)
+Login AWS console from CLI, using assume-role.

@@ -7,16 +7,18 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/pkg/browser"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
 	profileArgVal = kingpin.Flag("profile", "AWS profile name").String()
+	roleNameArgVal = kingpin.Flag("role", "AWS role name to assume").Required().String()
+	roleSessionNameArgVal = kingpin.Flag("role-session-name", "AWS role session name").String()
 )
 
 func main() {
@@ -32,23 +34,30 @@ func main() {
 		panic(err)
 	}
 
-	stsService := sts.NewFromConfig(cfg)
-	callerIdentity, err := stsService.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	iamService := iam.NewFromConfig(cfg)
+	roleResult, err := iamService.GetRole(ctx, &iam.GetRoleInput{
+		RoleName: roleNameArgVal,
+	})
 	if err != nil {
 		panic(err)
 	}
+	roleArn := roleResult.Role.Arn
 
-	userName := *callerIdentity.Arn
-	userName = userName[strings.LastIndex(userName, "/")+1:]
-
-	federationToken, err := stsService.GetFederationToken(ctx, &sts.GetFederationTokenInput{
-		Name: &userName,
+	stsService := sts.NewFromConfig(cfg)
+	if roleSessionNameArgVal == nil || *roleSessionNameArgVal == "" {
+		roleSessionName := fmt.Sprintf("%s-session", *roleNameArgVal)
+		roleSessionNameArgVal = &roleSessionName
+		fmt.Printf("Use %s as assume-role session name\n", roleSessionName)
+	}
+	assumeRoleResult, err := stsService.AssumeRole(ctx, &sts.AssumeRoleInput{
+		RoleArn: roleArn,
+		RoleSessionName: roleSessionNameArgVal,
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	creds := federationToken.Credentials
+	creds := assumeRoleResult.Credentials
 	sessionId := *creds.AccessKeyId
 	sessionKey := *creds.SecretAccessKey
 	sessionToken := *creds.SessionToken
