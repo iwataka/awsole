@@ -5,28 +5,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/pkg/browser"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
+const (
+	federationURL = "https://signin.aws.amazon.com/federation"
+)
+
 var (
-	profileArgVal = kingpin.Flag("profile", "AWS profile name").String()
-	roleNameArgVal = kingpin.Flag("role", "AWS role name to assume").Required().String()
-	roleSessionNameArgVal = kingpin.Flag("role-session-name", "AWS role session name").String()
+	profileFlag         = kingpin.Flag("profile", "AWS profile name").String()
+	roleNameFlag        = kingpin.Flag("role", "AWS role name to assume").String()
+	roleSessionNameFlag = kingpin.Flag("role-session-name", "AWS role session name").String()
 )
 
 func main() {
+	log.SetFlags(0)
+
 	kingpin.Parse()
 	ctx := context.TODO()
 	optFns := []func(*config.LoadOptions) error{}
-	if profileArgVal != nil {
-		optFns = append(optFns, config.WithSharedConfigProfile(*profileArgVal))
+	if profileFlag != nil {
+		optFns = append(optFns, config.WithSharedConfigProfile(*profileFlag))
 	}
 
 	cfg, err := config.LoadDefaultConfig(ctx, optFns...)
@@ -34,33 +42,66 @@ func main() {
 		panic(err)
 	}
 
-	iamService := iam.NewFromConfig(cfg)
-	roleResult, err := iamService.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: roleNameArgVal,
-	})
-	if err != nil {
-		panic(err)
-	}
-	roleArn := roleResult.Role.Arn
-
 	stsService := sts.NewFromConfig(cfg)
-	if roleSessionNameArgVal == nil || *roleSessionNameArgVal == "" {
-		roleSessionName := fmt.Sprintf("%s-session", *roleNameArgVal)
-		roleSessionNameArgVal = &roleSessionName
-		fmt.Printf("Use %s as assume-role session name\n", roleSessionName)
-	}
-	assumeRoleResult, err := stsService.AssumeRole(ctx, &sts.AssumeRoleInput{
-		RoleArn: roleArn,
-		RoleSessionName: roleSessionNameArgVal,
-	})
+	callerIdentityResult, err := stsService.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		panic(err)
 	}
+	callerArn := callerIdentityResult.Arn
 
-	creds := assumeRoleResult.Credentials
-	sessionId := *creds.AccessKeyId
-	sessionKey := *creds.SecretAccessKey
-	sessionToken := *creds.SessionToken
+	var sessionId string
+	var sessionKey string
+	var sessionToken string
+	if strings.Contains(*callerArn, ":role/") {
+		credentials, err := cfg.Credentials.Retrieve(ctx)
+		if err == nil {
+			sessionId = credentials.AccessKeyID
+			sessionKey = credentials.SecretAccessKey
+			sessionToken = credentials.SessionToken
+		} else {
+			sessionTokenResult, err := stsService.GetSessionToken(ctx, &sts.GetSessionTokenInput{})
+			if err != nil {
+				panic(err)
+			}
+			creds := sessionTokenResult.Credentials
+			sessionId = *creds.AccessKeyId
+			sessionKey = *creds.SecretAccessKey
+			sessionToken = *creds.SessionToken
+		}
+	} else {
+		if roleNameFlag == nil || *roleNameFlag == "" {
+			log.Fatalln("ERROR: role name must be specified if you've not assumed a role")
+		}
+
+		iamService := iam.NewFromConfig(cfg)
+		roleResult, err := iamService.GetRole(ctx, &iam.GetRoleInput{
+			RoleName: roleNameFlag,
+		})
+		if err != nil {
+			panic(err)
+		}
+		roleArn := roleResult.Role.Arn
+
+		if roleSessionNameFlag == nil || *roleSessionNameFlag == "" {
+			roleSessionName := fmt.Sprintf("%s-session", *roleNameFlag)
+			roleSessionNameFlag = &roleSessionName
+			fmt.Printf("Use \"%s\" as assume-role session name\n", roleSessionName)
+			fmt.Println("You can change it with --role-session-name")
+		}
+		assumeRoleResult, err := stsService.AssumeRole(ctx, &sts.AssumeRoleInput{
+			RoleArn:         roleArn,
+			RoleSessionName: roleSessionNameFlag,
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		creds := assumeRoleResult.Credentials
+		sessionId = *creds.AccessKeyId
+		sessionKey = *creds.SecretAccessKey
+		sessionToken = *creds.SessionToken
+	}
+
 	session := map[string]string{
 		"sessionId":    sessionId,
 		"sessionKey":   sessionKey,
@@ -72,7 +113,11 @@ func main() {
 	}
 	sessionStr := string(sessionBytes)
 
-	signinURL := fmt.Sprintf("https://signin.aws.amazon.com/federation?Action=getSigninToken&Session=%s", url.QueryEscape(sessionStr))
+	signinURL := fmt.Sprintf(
+		"%s?Action=getSigninToken&Session=%s",
+		federationURL,
+		url.QueryEscape(sessionStr),
+	)
 	resp, err := http.Get(signinURL)
 	if err != nil {
 		panic(err)
@@ -90,10 +135,14 @@ func main() {
 	signinToken := signinJson["SigninToken"]
 
 	loginURL := fmt.Sprintf(
-		"https://signin.aws.amazon.com/federation?Action=login&Destination=%s&SigninToken=%s",
+		"%s?Action=login&Destination=%s&SigninToken=%s",
+		federationURL,
 		url.QueryEscape("https://console.aws.amazon.com/"),
 		url.QueryEscape(signinToken),
 	)
 
-	browser.OpenURL(loginURL)
+	err = browser.OpenURL(loginURL)
+	if err != nil {
+		panic(err)
+	}
 }
