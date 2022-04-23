@@ -32,6 +32,7 @@ var (
 func main() {
 	log.SetFlags(0)
 
+	kingpin.Version("0.1.1")
 	kingpin.Parse()
 	ctx := context.TODO()
 	optFns := []func(*config.LoadOptions) error{}
