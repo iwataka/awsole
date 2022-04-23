@@ -19,12 +19,14 @@ import (
 
 const (
 	federationURL = "https://signin.aws.amazon.com/federation"
+	consoleURL    = "https://console.aws.amazon.com/"
 )
 
 var (
-	profileFlag         = kingpin.Flag("profile", "AWS profile name").String()
+	profileFlag         = kingpin.Flag("profile", "AWS profile name to use").String()
 	roleNameFlag        = kingpin.Flag("role", "AWS role name to assume").String()
-	roleSessionNameFlag = kingpin.Flag("role-session-name", "AWS role session name").String()
+	roleSessionNameFlag = kingpin.Flag("role-session-name", "AWS role session name for assume-role").String()
+	serviceNameFlag     = kingpin.Arg("service", "AWS service name to login").String()
 )
 
 func main() {
@@ -134,10 +136,14 @@ func main() {
 	}
 	signinToken := signinJson["SigninToken"]
 
+	loginConsoleURL := consoleURL
+	if serviceNameFlag != nil {
+		loginConsoleURL += *serviceNameFlag
+	}
 	loginURL := fmt.Sprintf(
 		"%s?Action=login&Destination=%s&SigninToken=%s",
 		federationURL,
-		url.QueryEscape("https://console.aws.amazon.com/"),
+		url.QueryEscape(loginConsoleURL),
 		url.QueryEscape(signinToken),
 	)
 
