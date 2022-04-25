@@ -5,7 +5,7 @@ Open AWS management console from CLI, using assume-role.
 ## Installation
 
 ```
-go install github.com/iwataka/awsole
+go install github.com/iwataka/awsole@latest
 ```
 
 ## How to use
