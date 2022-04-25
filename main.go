@@ -55,7 +55,7 @@ func main() {
 	var sessionId string
 	var sessionKey string
 	var sessionToken string
-	if strings.Contains(*callerArn, ":role/") {
+	if strings.Contains(*callerArn, ":assumed-role/") {
 		credentials, err := cfg.Credentials.Retrieve(ctx)
 		if err == nil {
 			sessionId = credentials.AccessKeyID
