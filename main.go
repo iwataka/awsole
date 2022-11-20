@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -32,7 +32,7 @@ var (
 func main() {
 	log.SetFlags(0)
 
-	kingpin.Version("0.1.1")
+	kingpin.Version("0.1.3")
 	kingpin.Parse()
 	ctx := context.TODO()
 	optFns := []func(*config.LoadOptions) error{}
@@ -129,7 +129,7 @@ func main() {
 		panic(err)
 	}
 	defer resp.Body.Close()
-	signinBody, err := ioutil.ReadAll(resp.Body)
+	signinBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		panic(err)
 	}
