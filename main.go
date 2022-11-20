@@ -85,15 +85,18 @@ func main() {
 		}
 		roleArn := roleResult.Role.Arn
 
+		var roleSessionName string
 		if roleSessionNameFlag == nil || *roleSessionNameFlag == "" {
-			roleSessionName := fmt.Sprintf("%s-session", *roleNameFlag)
-			roleSessionNameFlag = &roleSessionName
+			slashIndex := strings.LastIndex(*callerIdentityResult.Arn, "/")
+			roleSessionName = (*callerIdentityResult.Arn)[slashIndex+1:]
 			fmt.Printf("Use \"%s\" as assume-role session name\n", roleSessionName)
 			fmt.Println("You can change it with --role-session-name")
+		} else {
+			roleSessionName = *roleSessionNameFlag
 		}
 		assumeRoleResult, err := stsService.AssumeRole(ctx, &sts.AssumeRoleInput{
 			RoleArn:         roleArn,
-			RoleSessionName: roleSessionNameFlag,
+			RoleSessionName: &roleSessionName,
 		})
 		if err != nil {
 			panic(err)
